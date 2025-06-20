@@ -313,3 +313,7 @@ body {
   .card {
     padding:1.25rem;}
 }
+.mood-rating {
+  font-weight: bold;
+  color:#4caf50;
+}

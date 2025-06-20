@@ -25,10 +25,30 @@ export default function JournalApp() {
 
   const handleSave = async () => {
     if (!entry.trim()) return;
-    const newEntry = {
-      text: entry.trim(),
-      date: new Date().toISOString().split('T')[0],
-    };
+
+    const date = new Date().toISOString().split('T')[0];
+    let mood = 'neutral';
+
+    try {
+      const analysisRes = await fetch('http://localhost:5000/analyze', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${localStorage.getItem('token')}`,
+        },
+        body: JSON.stringify({ text: entry }),
+      });
+
+      if (analysisRes.ok) {
+        const data = await analysisRes.json();
+        mood = data.topEmotion || 'neutral';
+      }
+    } catch (err) {
+      console.error('Error analyzing mood:', err);
+    }
+
+    const newEntry = { text: entry.trim(), date, mood };
+
     try {
       const res = await fetch('http://localhost:5000/entry', {
         method: 'POST',
@@ -38,6 +58,7 @@ export default function JournalApp() {
         },
         body: JSON.stringify(newEntry),
       });
+
       if (res.ok) {
         const savedEntry = await res.json();
         setEntries([savedEntry, ...entries]);
@@ -87,7 +108,7 @@ export default function JournalApp() {
           Authorization: `Bearer ${localStorage.getItem('token')}`,
         },
       });
-      if (res.ok) {
+      if (res.status === 204) {
         setEntries(entries.filter((e) => e._id !== id));
       }
     } catch (err) {
@@ -100,21 +121,12 @@ export default function JournalApp() {
   }, []);
 
   const moodColors = {
-    happy: '#d1fae5',
-    anxious: '#fef3c7',
-    content: '#e0e7ff',
-    excited: '#fff0f6',
-    sad: '#fce7f3',
-    neutral: '#f3f4f6',
+    happy: '#d1fae5', anxious: '#fef3c7', content: '#e0e7ff',
+    excited: '#fff0f6', sad: '#fce7f3', neutral: '#f3f4f6',
   };
-
   const moodTextColors = {
-    happy: '#059669',
-    anxious: '#b45309',
-    content: '#4f46e5',
-    excited: '#be185d',
-    sad: '#9d174d',
-    neutral: '#6b7280',
+    happy: '#059669', anxious: '#b45309', content: '#4f46e5',
+    excited: '#be185d', sad: '#9d174d', neutral: '#6b7280',
   };
 
   return (
