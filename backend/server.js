@@ -3,68 +3,82 @@ const mongoose = require('mongoose');
 const cors = require('cors');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+require('dotenv').config();
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
 const PORT = 5000;
-const JWT_SECRET = 'your-secret-key';
+const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
 
+// MongoDB Connection
 mongoose.connect('mongodb://localhost:27017/moodjournal', {
   useNewUrlParser: true,
   useUnifiedTopology: true,
-}).then(()=>{
-    console.log("connected")
+}).then(() => {
+  console.log('✅ MongoDB connected');
+}).catch(err => {
+  console.error('❌ MongoDB connection error:', err);
 });
 
-//User schema
+// Mongoose Schemas
 const UserSchema = new mongoose.Schema({
   name: String,
   email: { type: String, unique: true },
   password: String,
 });
-
 const User = mongoose.model('User', UserSchema);
-
-app.post('/signup', async (req, res) => {
-  const { name, email, password } = req.body;
-  const hashed = await bcrypt.hash(password, 10);
-
-  try {
-    const user = new User({ name, email, password: hashed });
-    await user.save();
-    res.status(201).json({ message: 'User created successfully' });
-  } catch (e) {
-    res.status(400).json({ error: 'Email already exists' });
-  }
-});
-
-app.post('/login', async (req, res) => {
-  const { email, password } = req.body;
-  const user = await User.findOne({ email });
-
-  if (!user || !(await bcrypt.compare(password, user.password))) {
-    return res.status(401).json({ error: 'Invalid credentials' });
-  }
-
-  const token = jwt.sign({ userId: user._id }, JWT_SECRET, { expiresIn: '2h' });
-  res.json({ token, userId: user._id });
-});
 
 const EntrySchema = new mongoose.Schema({
   userId: mongoose.Schema.Types.ObjectId,
   text: String,
   mood: String,
+  allEmotions: [
+    {
+      label: String,
+      score: Number,
+    }
+  ],
   date: String,
+  rating: Number,
 });
-
 const Entry = mongoose.model('Entry', EntrySchema);
 
+// Dynamic fetch import for CommonJS
+const fetch = (...args) => import('node-fetch').then(({ default: fetch }) => fetch(...args));
+
+// Emotion Analysis
+async function analyzeEmotion(text) {
+  const HF_API_TOKEN = process.env.HUGGINGFACE_TOKEN;
+  const API_URL = "https://api-inference.huggingface.co/models/j-hartmann/emotion-english-distilroberta-base";
+
+  const response = await fetch(API_URL, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${HF_API_TOKEN}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ inputs: text })
+  });
+
+  const result = await response.json();
+
+  if (result.error) {
+    throw new Error(`HF API Error: ${result.error}`);
+  }
+
+  if (Array.isArray(result) && result.length > 0) {
+    return result[0];
+  }
+
+  return [];
+}
+
+// Auth Middleware
 function auth(req, res, next) {
   const token = req.headers.authorization?.split(' ')[1];
   if (!token) return res.status(403).send('Token missing');
-
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
     req.userId = decoded.userId;
@@ -74,13 +88,55 @@ function auth(req, res, next) {
   }
 }
 
-app.post('/entry', auth, async (req, res) => {
-  const { text, mood, date } = req.body;
-  const entry = new Entry({ userId: req.userId, text, mood, date });
-  await entry.save();
-  res.status(201).json(entry);
+// Auth Routes
+app.post('/signup', async (req, res) => {
+  const { name, email, password } = req.body;
+  const hashed = await bcrypt.hash(password, 10);
+  try {
+    const user = new User({ name, email, password: hashed });
+    await user.save();
+    res.status(201).json({ message: 'User created successfully' });
+  } catch (err) {
+    console.error('Signup error:', err);
+    res.status(400).json({ error: 'Email already exists or invalid data' });
+  }
 });
 
+app.post('/login', async (req, res) => {
+  const { email, password } = req.body;
+  const user = await User.findOne({ email });
+  if (!user || !(await bcrypt.compare(password, user.password))) {
+    return res.status(401).json({ error: 'Invalid credentials' });
+  }
+  const token = jwt.sign({ userId: user._id }, JWT_SECRET, { expiresIn: '2h' });
+  res.json({ token, userId: user._id });
+});
+
+// Entry Routes
+app.post('/entry', auth, async (req, res) => {
+  const { text, date } = req.body;
+  try {
+    const allEmotions = await analyzeEmotion(text);
+    const topEmotion = allEmotions.reduce((prev, curr) => prev.score > curr.score ? prev : curr);
+
+    const rating = Math.round(topEmotion.score * 5 * 10) / 10; // Convert confidence to 0–5 rating
+
+    const entry = new Entry({
+      userId: req.userId,
+      text,
+      mood: topEmotion.label,
+      allEmotions,
+      date,
+      rating,
+    });
+
+    await entry.save();
+    res.status(201).json(entry);
+  } catch (error) {
+    console.error("🚨 Error in /entry:", error);
+    res.status(500).json({ error: error.message || 'Emotion analysis failed' });
+  }
+});
 
 app.get('/entries', auth, async (req, res) => {
   const entries = await Entry.find({ userId: req.userId }).sort({ date: -1 });
@@ -89,15 +145,28 @@ app.get('/entries', auth, async (req, res) => {
 
 app.put('/entry/:id', auth, async (req, res) => {
   const { id } = req.params;
-  const { text, mood = 'neutral', date } = req.body;
+  const { text, date } = req.body;
   try {
+    const allEmotions = await analyzeEmotion(text);
+    const topEmotion = allEmotions.reduce((prev, curr) => prev.score > curr.score ? prev : curr);
+
+    const rating = Math.round(topEmotion.score * 5 * 10) / 10;
+
     const updated = await Entry.findOneAndUpdate(
       { _id: id, userId: req.userId },
-      { text, mood, date },
+      {
+        text,
+        mood: topEmotion.label,
+        allEmotions,
+        date,
+        rating,
+      },
       { new: true }
     );
+
     res.json(updated);
-  } catch {
+  } catch (err) {
+    console.error('Update error:', err);
     res.status(400).send('Update failed');
   }
 });
@@ -107,41 +176,68 @@ app.delete('/entry/:id', auth, async (req, res) => {
   try {
     await Entry.findOneAndDelete({ _id: id, userId: req.userId });
     res.sendStatus(204);
-  } catch {
+  } catch (err) {
+    console.error('Delete error:', err);
     res.status(400).send('Delete failed');
   }
 });
 
-
-
-
-app.get('/api/dashboard', (req, res) => {
-  res.json({
-    totalEntries: 15,
-    averageMood: "Content",
-    dayStreak: 7,
-    mostCommonMood: "Happy",
-    moodStats: {
-      happy: 5,
-      anxious: 3,
-      content: 4,
-      excited: 2,
-      sad: 1,
-      neutral:3
-    },
-    recentMoods: [
-      { mood: "happy", date: "2024-06-03", rating: 8 },
-      { mood: "anxious", date: "2024-06-02", rating: 4 },
-      { mood: "content", date: "2024-06-01", rating: 7 },
-      { mood: "excited", date: "2024-05-31", rating: 9 },
-      { mood: "sad", date: "2024-05-30", rating: 3 },
-      { mood: "nuetral", date: "2024-05-30", rating: 5 }
-    ]
-  });
+// Emotion Testing Route
+app.post('/analyze', async (req, res) => {
+  const { text } = req.body;
+  try {
+    const emotions = await analyzeEmotion(text);
+    res.json({ emotions });
+  } catch (err) {
+    console.error('Analyze route error:', err);
+    res.status(500).json({ error: 'Analysis failed' });
+  }
 });
 
+// Dashboard Route
+app.get('/api/dashboard', auth, async (req, res) => {
+  try {
+    const entries = await Entry.find({ userId: req.userId });
+    //console.log("All raw entries from MongoDB:", entries);
 
+    const recentMoodMap = {};
+    entries.forEach(entry => {
+      const moodKey = (entry.mood || 'unknown').toLowerCase();
+      const current = recentMoodMap[moodKey];
+      if (!current || new Date(entry.date) > new Date(current.date)) {
+        recentMoodMap[moodKey] = {
+          mood: entry.mood || 'N/A',
+          date: entry.date,
+          rating: entry.rating ?? 0,
+          allEmotions: entry.allEmotions || [],
+        };
+      }
+    });
 
+    const recentMoods = Object.values(recentMoodMap);
 
+    const moodStats = {};
+    const activeDaysSet = new Set();
+    entries.forEach(entry => {
+      moodStats[entry.mood] = (moodStats[entry.mood] || 0) + 1;
+      if (entry.date) activeDaysSet.add(entry.date);
+    });
 
-app.listen(PORT, () => console.log(`Server running on http://localhost:${PORT}`));
+    //console.log("Formatted recent moods for dashboard:", recentMoods);
+
+    res.json({
+      totalEntries: entries.length,
+      recentMoods,
+      moodStats,
+      activeDays: activeDaysSet.size,
+    });
+  } catch (err) {
+    console.error("Dashboard error:", err);
+    res.status(500).json({ error: "Dashboard data fetch failed" });
+  }
+});
+
+// Start Server
+app.listen(PORT, () => {
+  console.log(`✅ Server running at http://localhost:${PORT}`);
+});
