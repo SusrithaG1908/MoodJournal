@@ -7,16 +7,33 @@ require('dotenv').config();
 
 const app = express();
 
-// Allow both local and deployed frontend
-const allowedOrigins = [
-  'http://localhost:3000',
-  'https://moodjournal-app.onrender.com'
-];
+// 📝 Log every incoming request
+app.use((req, res, next) => {
+  console.log(`[${new Date().toISOString()}] ${req.method} ${req.originalUrl}`);
+  console.log(`Origin: ${req.headers.origin || 'N/A'}`);
+  console.log(`Headers:`, req.headers);
+  next();
+});
 
-app.use(cors({
-  origin: allowedOrigins,
+// 🌐 Dynamic CORS setup
+const allowedOrigins = ['https://moodjournal-app.onrender.com'];
+
+const corsOptions = {
+  origin: function (origin, callback) {
+    if (!origin) return callback(null, true); // Allow Postman/cURL
+    if (
+      allowedOrigins.includes(origin) ||
+      /^http:\/\/localhost:\d+$/.test(origin)
+    ) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS: ' + origin));
+    }
+  },
   credentials: true,
-}));
+};
+
+app.use(cors(corsOptions));
 
 app.use(express.json());
 
