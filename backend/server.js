@@ -11,9 +11,9 @@ app.use(express.json());
 
 const PORT = 5000;
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
-
+const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/moodjournal';
 // MongoDB Connection
-mongoose.connect('mongodb://localhost:27017/moodjournal', {
+mongoose.connect(MONGODB_URI, {
   useNewUrlParser: true,
   useUnifiedTopology: true,
 }).then(() => {
