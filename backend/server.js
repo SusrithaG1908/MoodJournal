@@ -116,6 +116,7 @@ app.post('/login', async (req, res) => {
 app.post('/entry', auth, async (req, res) => {
   const { text, date } = req.body;
   try {
+    console.log("POST msg received :", text);
     const allEmotions = await analyzeEmotion(text);
     const topEmotion = allEmotions.reduce((prev, curr) => prev.score > curr.score ? prev : curr);
 
