@@ -6,7 +6,18 @@ const jwt = require('jsonwebtoken');
 require('dotenv').config();
 
 const app = express();
-app.use(cors());
+
+// Allow both local and deployed frontend
+const allowedOrigins = [
+  'http://localhost:3000',
+  'https://moodjournal-app.onrender.com'
+];
+
+app.use(cors({
+  origin: allowedOrigins,
+  credentials: true,
+}));
+
 app.use(express.json());
 
 const PORT = 5000;
