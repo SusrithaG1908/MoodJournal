@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import './JournalApp.css';
 import Navbar from './Navbar';
 
+const apiUrl = process.env.REACT_APP_BACKEND_API_URL;
+
 export default function JournalApp() {
   const [entry, setEntry] = useState('');
   const [entries, setEntries] = useState([]);
@@ -10,7 +12,7 @@ export default function JournalApp() {
 
   const fetchEntries = async () => {
     try {
-      const res = await fetch('http://localhost:5000/entries', {
+      const res = await fetch(`${apiUrl}/entries`, {
         headers: {
           Authorization: `Bearer ${localStorage.getItem('token')}`,
         },
@@ -30,7 +32,7 @@ export default function JournalApp() {
     let mood = 'neutral';
 
     try {
-      const analysisRes = await fetch('http://localhost:5000/analyze', {
+      const analysisRes = await fetch(`${apiUrl}/analyze`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -50,7 +52,7 @@ export default function JournalApp() {
     const newEntry = { text: entry.trim(), date, mood };
 
     try {
-      const res = await fetch('http://localhost:5000/entry', {
+      const res = await fetch(`${apiUrl}/entry`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -76,7 +78,7 @@ export default function JournalApp() {
 
   const handleUpdate = async (id) => {
     try {
-      const res = await fetch(`http://localhost:5000/entry/${id}`, {
+      const res = await fetch(`${apiUrl}/entry/${id}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -102,7 +104,7 @@ export default function JournalApp() {
   const handleDelete = async (id) => {
     if (!window.confirm('Delete this entry?')) return;
     try {
-      const res = await fetch(`http://localhost:5000/entry/${id}`, {
+      const res = await fetch(`${apiUrl}/entry/${id}`, {
         method: 'DELETE',
         headers: {
           Authorization: `Bearer ${localStorage.getItem('token')}`,

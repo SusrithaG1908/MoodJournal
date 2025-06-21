@@ -12,6 +12,8 @@ import {
 } from 'react-icons/fa';
 import Navbar from './Navbar';
 
+const apiUrl = process.env.REACT_APP_BACKEND_API_URL;
+
 const Dashboard = () => {
   const [totalEntries, setTotalEntries] = useState(0);
   const [recentMoodsRaw, setRecentMoodsRaw] = useState([]);
@@ -23,7 +25,7 @@ const Dashboard = () => {
     const fetchDashboardData = async () => {
       try {
         setIsLoading(true);
-        const res = await fetch('http://localhost:5000/api/dashboard', {
+        const res = await fetch(`${apiUrl}/api/dashboard`, {
           headers: {
             Authorization: `Bearer ${localStorage.getItem('token')}`,
           },

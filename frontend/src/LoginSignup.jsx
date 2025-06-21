@@ -2,6 +2,8 @@ import React, { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import './Login_and_signup_css.css';
 
+const apiUrl = process.env.REACT_APP_BACKEND_API_URL;
+
 function LoginSignup() {
   const [isLogin, setIsLogin] = useState(true);
   const navigate = useNavigate();
@@ -23,8 +25,8 @@ function LoginSignup() {
     }
 
     const url = isLogin
-      ? 'http://localhost:5000/login'
-      : 'http://localhost:5000/signup';
+      ? `${apiUrl}/login`
+      : `${apiUrl}/signup`;
 
     const body = isLogin
       ? { email, password }
